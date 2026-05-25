@@ -80,12 +80,17 @@ export async function uploadMedia(
   options: UploadOptions = {}
 ): Promise<UploadResult> {
   const { password, passwordHint, expiresIn, burnAfterViews, isOneTime, unlockAt, title, userId, onProgress, onStage } = options;
+  const {
+    data: { user: authUser },
+  } = await supabase.auth.getUser();
+  const resolvedUserId = userId ?? authUser?.id ?? null;
+  console.debug('[XCrypt Upload] Authenticated user id:', resolvedUserId);
 
   onStage?.('Checking storage...');
   onProgress?.(2);
 
-  if (userId) {
-    const limit = await checkStorageLimit(userId, file.size);
+  if (resolvedUserId) {
+    const limit = await checkStorageLimit(resolvedUserId, file.size);
     if (!limit.allowed) {
       throw new Error(limit.message || 'Storage limit exceeded');
     }
@@ -134,6 +139,15 @@ export async function uploadMedia(
     .from('xcrypt-media')
     .upload(storagePath, uploadBlob, { cacheControl: '3600', upsert: false });
 
+  console.debug('[XCrypt Upload] Storage upload response:', {
+    storagePath,
+    mimeType: processedFile.type,
+    encryptedSize: uploadBlob.size,
+    encrypted: shouldEncrypt,
+    ivLength: encryptionIv ? atob(encryptionIv).length : 0,
+    saltLength: encryptionSalt ? atob(encryptionSalt).length : 0,
+  });
+
   if (storageError) {
     throw new Error(`Storage upload failed: ${storageError.message}`);
   }
@@ -145,17 +159,17 @@ export async function uploadMedia(
 
   const expiresAt = expiresIn != null
     ? new Date(Date.now() + expiresIn * 60 * 60 * 1000).toISOString()
-    : userId == null
+    : resolvedUserId == null
     ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
     : null;
 
   const record = {
     access_code: accessCode,
-    user_id: userId || null,
-    is_anonymous: !userId,
+    user_id: resolvedUserId,
+    is_anonymous: !resolvedUserId,
     original_filename: file.name,
     file_type: fileType,
-    mime_type: file.type,
+    mime_type: processedFile.type,
     file_size_bytes: processedFile.size,
     storage_path: storagePath,
     is_encrypted: shouldEncrypt,
@@ -174,19 +188,33 @@ export async function uploadMedia(
     duration_seconds: duration || null,
   };
 
-  const { error: dbError } = await (supabase.from('media_uploads') as any).insert(record);
+  console.debug('[XCrypt Upload] Insert payload:', {
+    access_code: record.access_code,
+    user_id: record.user_id,
+    storage_path: record.storage_path,
+    mime_type: record.mime_type,
+    is_encrypted: record.is_encrypted,
+  });
+
+  const { data: insertedRows, error: dbError } = await (supabase.from('media_uploads') as any)
+    .insert(record)
+    .select('id')
+    .limit(1);
+
+  console.debug('[XCrypt Upload] Insert response:', insertedRows);
+  if (dbError) console.error('[XCrypt Upload] Insert error:', dbError);
 
   if (dbError) {
     await supabase.storage.from('xcrypt-media').remove([storagePath]);
     throw new Error(`Database save failed: ${dbError.message}`);
   }
 
-  if (userId) {
-    const { data: profile } = await supabase.from('profiles').select('storage_used_bytes').eq('id', userId).maybeSingle();
+  if (resolvedUserId) {
+    const { data: profile } = await supabase.from('profiles').select('storage_used_bytes').eq('id', resolvedUserId).maybeSingle();
     const currentUsage = profile?.storage_used_bytes || 0;
     await (supabase.from('profiles') as any)
       .update({ storage_used_bytes: currentUsage + processedFile.size })
-      .eq('id', userId);
+      .eq('id', resolvedUserId);
   }
 
   onProgress?.(100);
