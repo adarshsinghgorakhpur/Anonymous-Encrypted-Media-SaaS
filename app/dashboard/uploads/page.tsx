@@ -17,9 +17,19 @@ export default function UploadsPage() {
   const [loading, setLoading] = useState(true);
 
   const load = () => {
-    if (!user) return;
+    if (!user) {
+      console.debug('[XCrypt Dashboard Uploads] No authenticated user; skipping uploads fetch.');
+      setUploads([]);
+      setLoading(false);
+      return;
+    }
     (supabase.from('media_uploads') as any).select('*').eq('user_id', user.id).eq('is_destroyed', false).order('created_at', { ascending: false })
-      .then(({ data }: any) => { setUploads(data || []); setLoading(false); });
+      .then(({ data, error }: any) => {
+        console.debug('[XCrypt Dashboard Uploads] Fetch response:', { userId: user.id, rows: data?.length ?? 0, error: error ?? null });
+        if (error) console.error('[XCrypt Dashboard Uploads] Fetch error:', error);
+        setUploads(data || []);
+        setLoading(false);
+      });
   };
   useEffect(load, [user]);
 

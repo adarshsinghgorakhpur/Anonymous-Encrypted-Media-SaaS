@@ -9,6 +9,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
+      console.debug('[XCrypt Auth] Initial session loaded:', { hasSession: !!session, userId: session?.user?.id ?? null });
       setSession(session);
       setUser(session?.user ?? null);
 
@@ -29,6 +30,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.debug('[XCrypt Auth] Auth state changed:', { event, hasSession: !!session, userId: session?.user?.id ?? null });
       setSession(session);
       setUser(session?.user ?? null);
 
@@ -52,6 +54,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (event === 'SIGNED_OUT') {
         useAuthStore.getState().reset();
+      } else {
+        setIsLoading(false);
       }
     });
 

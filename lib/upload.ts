@@ -81,9 +81,19 @@ export async function uploadMedia(
 ): Promise<UploadResult> {
   const { password, passwordHint, expiresIn, burnAfterViews, isOneTime, unlockAt, title, userId, onProgress, onStage } = options;
   const { data: authData, error: authError } = await supabase.auth.getUser();
+  const { data: sessionData } = await supabase.auth.getSession();
   const authUser = authData.user;
   const resolvedUserId = authUser?.id ?? userId ?? null;
-  console.debug('[XCrypt Upload] Authenticated user:', { authUserId: authUser?.id ?? null, providedUserId: userId ?? null, resolvedUserId });
+  console.debug('[XCrypt Upload] Authenticated user:', {
+    hasSession: !!sessionData.session,
+    sessionUserId: sessionData.session?.user?.id ?? null,
+    authUserId: authUser?.id ?? null,
+    providedUserId: userId ?? null,
+    resolvedUserId,
+  });
+  if (authUser?.id && userId && authUser.id !== userId) {
+    console.warn('[XCrypt Upload] userId mismatch between store and auth session. Using auth user id.', { authUserId: authUser.id, providedUserId: userId });
+  }
   if (authError) {
     console.error('[XCrypt Upload] Failed to resolve auth user:', authError);
   }
