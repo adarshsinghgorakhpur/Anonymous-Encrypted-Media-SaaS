@@ -16,6 +16,7 @@ export default function DashboardPage() {
   const [uploads, setUploads] = useState<MediaUpload[]>([]);
   const [accessLogs, setAccessLogs] = useState<AccessAttemptLog[]>([]);
   const [totalViews, setTotalViews] = useState(0);
+  const [totalUploads, setTotalUploads] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -29,22 +30,31 @@ export default function DashboardPage() {
         .order('created_at', { ascending: false })
         .limit(5);
 
+      console.debug('[XCrypt Dashboard] Recent uploads fetch:', { userId: user.id, rows: uploadsRes.data?.length ?? 0, error: uploadsRes.error ?? null });
+
+      const uploadCountRes = await (supabase.from('media_uploads') as any)
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('is_destroyed', false);
+
+      setTotalUploads(uploadCountRes.count || 0);
+      console.debug('[XCrypt Dashboard] Upload count fetch:', { userId: user.id, count: uploadCountRes.count || 0, error: uploadCountRes.error ?? null });
+
       setUploads(uploadsRes.data || []);
 
       const uploadIds = (uploadsRes.data || []).map((u: any) => u.id);
+      const viewsTotal = (uploadsRes.data || []).reduce((sum: number, u: any) => sum + (u.view_count || 0), 0);
+      setTotalViews(viewsTotal);
+      console.debug('[XCrypt Dashboard] Total views computed:', { userId: user.id, totalViews: viewsTotal });
 
       if (uploadIds.length > 0) {
-        const viewsRes = await (supabase.from('analytics') as any)
-          .select('id', { count: 'exact', head: true })
-          .in('upload_id', uploadIds);
-
-        setTotalViews(viewsRes.count || 0);
-
         const logsRes = await (supabase.from('access_attempt_logs') as any)
           .select('*')
           .in('upload_id', uploadIds)
           .order('created_at', { ascending: false })
           .limit(10);
+
+        console.debug('[XCrypt Dashboard] Access logs fetch:', { uploadIds: uploadIds.length, rows: logsRes.data?.length ?? 0, error: logsRes.error ?? null });
 
         setAccessLogs(logsRes.data || []);
       }
@@ -58,7 +68,7 @@ export default function DashboardPage() {
   const storageLimit = getStorageLimit(plan);
 
   const stats = [
-    { label: 'Total Uploads', value: uploads.length, icon: Upload, color: 'from-cyan-500 to-blue-600' },
+    { label: 'Total Uploads', value: totalUploads, icon: Upload, color: 'from-cyan-500 to-blue-600' },
     { label: 'Total Views', value: totalViews, icon: Eye, color: 'from-emerald-500 to-teal-600' },
     { label: 'Storage Used', value: formatStorage(storageUsed), icon: HardDrive, color: 'from-amber-500 to-orange-600' },
     { label: 'Plan', value: plan === 'ultra' ? 'Ultra' : isPremium ? 'Pro' : 'Free', icon: CreditCard, color: 'from-rose-500 to-pink-600' },

@@ -90,6 +90,7 @@ export default function ViewPage() {
     if (error || !data) return setState('not-found');
 
     const record = data as MediaUpload;
+    console.debug('[XCrypt View] Loaded upload row id:', record.id, 'storagePath:', record.storage_path, 'encrypted:', record.is_encrypted);
     if (record.is_destroyed) return setState('expired');
     if (record.expires_at && new Date(record.expires_at) < new Date()) {
       await (supabase.from('media_uploads') as any).update({ is_destroyed: true, destroyed_at: new Date().toISOString() }).eq('id', record.id);
@@ -110,6 +111,7 @@ export default function ViewPage() {
   const prepareMedia = useCallback(async (rec: MediaUpload, pw?: string) => {
     try {
       setState(rec.is_encrypted ? 'decrypting' : 'loading');
+      console.debug('[XCrypt View] Decrypt start for upload id:', rec.id, 'storagePath:', rec.storage_path);
       const signedUrl = await getSignedUrl(rec.storage_path);
 
       if (!rec.is_encrypted) {
@@ -117,11 +119,21 @@ export default function ViewPage() {
       } else {
         const decryptPassword = pw || rec.encryption_password || '';
         const res = await fetch(signedUrl);
+        if (!res.ok) throw new Error(`Encrypted download failed: ${res.status}`);
         const encBuf = await res.arrayBuffer();
         console.debug('[XCrypt] Encrypted buffer size:', encBuf.byteLength);
+        console.debug('[XCrypt] Downloaded encrypted size:', encBuf.byteLength);
         console.debug('[XCrypt] Password available:', !!decryptPassword, 'length:', decryptPassword.length);
         console.debug('[XCrypt] IV available:', !!rec.encryption_iv, 'Salt available:', !!rec.encryption_salt);
+        console.debug('[XCrypt] IV length:', rec.encryption_iv ? atob(rec.encryption_iv).length : 0);
+        console.debug('[XCrypt] Salt length:', rec.encryption_salt ? atob(rec.encryption_salt).length : 0);
         console.debug('[XCrypt] MIME type:', rec.mime_type);
+        if (!rec.encryption_iv || !rec.encryption_salt) {
+          throw new Error('Missing encryption metadata');
+        }
+        if (encBuf.byteLength === 0) {
+          throw new Error('Downloaded encrypted payload is empty');
+        }
         const decBuf = await decryptFile(encBuf, decryptPassword, rec.encryption_iv!, rec.encryption_salt!);
         console.debug('[XCrypt] Decrypted buffer size:', decBuf.byteLength);
         const blob = new Blob([decBuf], { type: rec.mime_type });

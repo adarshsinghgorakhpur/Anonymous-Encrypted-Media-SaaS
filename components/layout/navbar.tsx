@@ -4,14 +4,15 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Shield, Menu, X, Upload, LogOut, Settings, Crown, User, LayoutDashboard } from 'lucide-react';
+import { Shield, Menu, X, Upload, LogOut, Crown, LayoutDashboard, Vault, ShieldCheck } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
 import { useAuthStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
 
 export function Navbar() {
   const pathname = usePathname();
-  const { user, isPremium } = useAuthStore();
+  const { user, isPremium, profile } = useAuthStore();
+  const isAdmin = !!profile?.is_admin;
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -31,11 +32,18 @@ export function Navbar() {
     setDropdownOpen(false);
   }
 
-  const navLinks = [
-    { href: '/', label: 'Home' },
-    { href: '/upload', label: 'Upload' },
-    { href: '/pricing', label: 'Pricing' },
-  ];
+  const navLinks = user
+    ? [
+      { href: '/dashboard', label: 'Dashboard' },
+      { href: '/dashboard/vault', label: 'Vault' },
+      { href: '/upload', label: 'Upload' },
+      ...(isAdmin ? [{ href: '/admin', label: 'Admin' }] : []),
+    ]
+    : [
+      { href: '/upload', label: 'Upload' },
+      { href: '/pricing', label: 'Pricing' },
+      { href: '/login', label: 'Login' },
+    ];
 
   return (
     <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled ? 'bg-[#080B14]/90 backdrop-blur-xl border-b border-white/[0.06]' : 'bg-transparent'}`}>
@@ -95,9 +103,17 @@ export function Navbar() {
                         <Link href="/dashboard" onClick={() => setDropdownOpen(false)} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-white/70 hover:text-white hover:bg-white/[0.06] transition-colors">
                           <LayoutDashboard className="w-4 h-4" /> Dashboard
                         </Link>
+                        <Link href="/dashboard/vault" onClick={() => setDropdownOpen(false)} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-white/70 hover:text-white hover:bg-white/[0.06] transition-colors">
+                          <Vault className="w-4 h-4" /> Vault
+                        </Link>
                         <Link href="/upload" onClick={() => setDropdownOpen(false)} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-white/70 hover:text-white hover:bg-white/[0.06] transition-colors">
                           <Upload className="w-4 h-4" /> Upload
                         </Link>
+                        {isAdmin && (
+                          <Link href="/admin" onClick={() => setDropdownOpen(false)} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-white/70 hover:text-white hover:bg-white/[0.06] transition-colors">
+                            <ShieldCheck className="w-4 h-4" /> Admin
+                          </Link>
+                        )}
                         <button onClick={signOut} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-white/70 hover:text-white hover:bg-white/[0.06] transition-colors w-full text-left">
                           <LogOut className="w-4 h-4" /> Sign Out
                         </button>
@@ -146,11 +162,14 @@ export function Navbar() {
                 {user ? (
                   <>
                     <Link href="/dashboard" className="block px-3 py-2 rounded-lg text-sm text-white/60 hover:text-white hover:bg-white/[0.06]">Dashboard</Link>
+                    <Link href="/dashboard/vault" className="block px-3 py-2 rounded-lg text-sm text-white/60 hover:text-white hover:bg-white/[0.06]">Vault</Link>
+                    {isAdmin && <Link href="/admin" className="block px-3 py-2 rounded-lg text-sm text-white/60 hover:text-white hover:bg-white/[0.06]">Admin</Link>}
                     <button onClick={signOut} className="block w-full text-left px-3 py-2 rounded-lg text-sm text-white/60 hover:text-white hover:bg-white/[0.06]">Sign Out</button>
                   </>
                 ) : (
                   <>
-                    <Link href="/login" className="block px-3 py-2 rounded-lg text-sm text-white/60 hover:text-white hover:bg-white/[0.06]">Sign In</Link>
+                    <Link href="/pricing" className="block px-3 py-2 rounded-lg text-sm text-white/60 hover:text-white hover:bg-white/[0.06]">Pricing</Link>
+                    <Link href="/login" className="block px-3 py-2 rounded-lg text-sm text-white/60 hover:text-white hover:bg-white/[0.06]">Login</Link>
                     <Link href="/upload" className="block px-3 py-2 rounded-lg text-sm text-cyan-400 hover:text-cyan-300">Upload</Link>
                   </>
                 )}
