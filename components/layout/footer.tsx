@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Shield } from 'lucide-react';
+import Image from 'next/image';
 
 export function Footer() {
   return (
@@ -7,11 +7,14 @@ export function Footer() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
           <div className="col-span-2 md:col-span-1">
-            <Link href="/" className="flex items-center gap-2 mb-4">
-              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
-                <Shield className="w-3.5 h-3.5 text-white" />
-              </div>
-              <span className="text-sm font-bold text-white">XCrypt</span>
+            <Link href="/" className="flex items-center mb-4">
+              <Image
+                src="https://raw.githubusercontent.com/adarshsinghgorakhpur/Shared-database/refs/heads/main/XCrypt%20encryption/xcrypt.png"
+                alt="XCrypt"
+                width={100}
+                height={28}
+                className="h-7 w-auto"
+              />
             </Link>
             <p className="text-white/30 text-xs leading-relaxed">
               Anonymous encrypted media sharing. Upload, encrypt, and share with confidence.

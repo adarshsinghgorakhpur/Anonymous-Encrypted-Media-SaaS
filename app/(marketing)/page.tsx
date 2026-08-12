@@ -1,12 +1,13 @@
 'use client'
 
-import { motion } from 'framer-motion'
-import { Shield, Timer, UserX, LockKeyhole, ImageOff, KeyRound, Upload, Eye, LayoutDashboard, Image, Lock, BarChart3, Crown, Check, X, Zap, Clock } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Shield, Timer, UserX, LockKeyhole, ImageOff, KeyRound, Upload, Eye, LayoutDashboard, Image, Lock, BarChart3, Crown, Check, X, Zap, Clock, ChevronDown, Quote, Star } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { LiveCounters } from '@/components/home/live-counters'
 
 const fadeUp = {
   hidden: { opacity: 0, y: 20 },
@@ -35,41 +36,54 @@ const dashboardPreviews = [
   { icon: Clock, title: 'Scheduled Unlock', desc: 'Set countdown timers for timed media reveals.', color: 'from-rose-500 to-pink-600' },
 ]
 
-const plans = [
-  {
-    name: 'Free', price: '$0', period: '/mo', desc: 'Get started with basic encrypted sharing',
-    features: [
-      { text: '50MB storage', included: true }, { text: 'Image uploads', included: true },
-      { text: 'AES-256 encryption', included: true }, { text: 'Self-destruct files', included: true },
-      { text: '7-day expiry', included: true }, { text: 'Video uploads', included: false },
-      { text: 'Galleries', included: false }, { text: 'Vault notes', included: false },
-      { text: 'Analytics', included: false }, { text: 'No ads', included: false },
-    ],
-    cta: 'Get Started', href: '/upload', highlight: false,
-  },
-  {
-    name: 'Pro', price: '$9', period: '/mo', desc: 'For power users who need more storage',
-    features: [
-      { text: '20GB storage', included: true }, { text: 'Image + video uploads', included: true },
-      { text: 'AES-256 encryption', included: true }, { text: 'Self-destruct files', included: true },
-      { text: 'No expiry', included: true }, { text: 'Full analytics', included: true },
-      { text: 'Galleries', included: true }, { text: 'Vault notes', included: true },
-      { text: 'Scheduled unlock', included: true }, { text: 'No ads', included: true },
-    ],
-    cta: 'Start Pro', href: '/pricing', highlight: true,
-  },
-  {
-    name: 'Ultra', price: '$29', period: '/mo', desc: 'Unlimited everything for professionals',
-    features: [
-      { text: 'Unlimited storage', included: true }, { text: 'Image + video uploads', included: true },
-      { text: 'AES-256 encryption', included: true }, { text: 'Self-destruct files', included: true },
-      { text: 'No expiry', included: true }, { text: 'Advanced analytics', included: true },
-      { text: 'Unlimited galleries', included: true }, { text: 'Vault notes', included: true },
-      { text: 'Priority delivery', included: true }, { text: 'No ads', included: true },
-    ],
-    cta: 'Go Ultra', href: '/pricing', highlight: false,
-  },
+const faqs = [
+  { q: 'Is my data really encrypted?', a: 'Yes. Every file is encrypted with AES-256-GCM on your device before it is uploaded. The encryption key never touches our servers in a form we can read — only you and whoever you share the access code with can decrypt it.' },
+  { q: 'Do I need an account to use XCrypt?', a: 'No. You can upload and share files anonymously without signing up. Creating a free account unlocks galleries, vault notes, analytics, and upload history.' },
+  { q: 'What happens to expired files?', a: 'When a file expires or reaches its view limit, it is permanently destroyed — the encrypted blob is deleted from storage and the metadata is marked as destroyed. It cannot be recovered.' },
+  { q: 'Can I share files on social media?', a: 'Yes. After uploading, you get a shareable link plus QR code. You can share directly to WhatsApp, Telegram, email, X (Twitter), and Facebook.' },
+  { q: 'What is the difference between Pro and Ultra?', a: 'Pro gives you 20GB of storage, video uploads, full analytics, and scheduled unlock. Ultra removes all limits — unlimited storage, uploads, galleries, and vault notes.' },
+  { q: 'Is there a referral program?', a: 'Yes. Every user gets a referral link. When someone signs up through your link, you earn 10MB of bonus storage and 7 days of free premium per successful referral.' },
 ]
+
+const testimonials = [
+  { name: 'Aarav S.', role: 'Security Researcher', text: 'XCrypt is the cleanest encrypted sharing tool I have used. The self-destruct feature and access codes give me complete control over who sees my files and for how long.', rating: 5 },
+  { name: 'Meera K.', role: 'Freelance Photographer', text: 'I send client proofs through XCrypt every week. The galleries feature and password protection mean my work never leaks before the client signs off.', rating: 5 },
+  { name: 'Daniel R.', role: 'Startup Founder', text: 'We use XCrypt Vault for sharing sensitive internal docs. Knowing everything is encrypted client-side gives us peace of mind without the overhead of enterprise tools.', rating: 5 },
+]
+
+function FaqItem({ faq, index }: { faq: { q: string; a: string }; index: number }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <motion.div
+      custom={index}
+      variants={fadeUp}
+      initial="hidden"
+      whileInView="visible"
+      viewport={{ once: true }}
+      className="bg-white/[0.03] border border-white/[0.06] rounded-xl overflow-hidden"
+    >
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between px-5 py-4 text-left"
+      >
+        <span className="text-sm font-medium text-white/90">{faq.q}</span>
+        <ChevronDown className={`w-4 h-4 text-white/40 transition-transform shrink-0 ${open ? 'rotate-180' : ''}`} />
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden"
+          >
+            <p className="px-5 pb-4 text-sm text-white/50 leading-relaxed">{faq.a}</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  )
+}
 
 function AccessCodeCard() {
   const router = useRouter()
@@ -119,6 +133,11 @@ export default function LandingPage() {
           className="mt-6 max-w-xl text-lg text-white/40">
           Anonymous, end-to-end encrypted media sharing. Your files, your privacy, no compromises.
         </motion.p>
+      </section>
+
+      {/* Live Counters */}
+      <section className="max-w-5xl mx-auto px-4 sm:px-6 pb-16">
+        <LiveCounters />
       </section>
 
       {/* Action Cards - Upload + Decrypt visible immediately */}
@@ -200,39 +219,46 @@ export default function LandingPage() {
         </motion.div>
       </section>
 
-      {/* Pricing */}
-      <section className="px-6 pb-20 max-w-5xl mx-auto">
+      {/* Testimonials */}
+      <section className="px-6 pb-20 max-w-6xl mx-auto">
         <motion.div custom={0} variants={fadeUp} initial="hidden" whileInView="visible" viewport={{ once: true }} className="text-center mb-10">
-          <h2 className="font-space text-3xl md:text-4xl font-bold mb-3">Simple Pricing</h2>
-          <p className="text-white/40 text-sm">Start free, upgrade when you need more</p>
+          <p className="text-xs uppercase tracking-widest text-white/50 mb-3">Testimonials</p>
+          <h2 className="font-space text-3xl md:text-4xl font-bold">Trusted by Professionals</h2>
         </motion.div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {plans.map((plan, i) => (
-            <motion.div key={plan.name} custom={i} variants={fadeUp} initial="hidden" whileInView="visible" viewport={{ once: true }}
-              className={`rounded-2xl p-6 flex flex-col ${plan.highlight
-                ? 'bg-gradient-to-b from-cyan-500/10 to-blue-600/5 border-2 border-cyan-500/30 ring-1 ring-cyan-500/20'
-                : 'bg-white/[0.02] border border-white/[0.06]'}`}>
-              {plan.highlight && <div className="flex items-center gap-1 text-xs text-cyan-400 mb-3"><Crown className="w-3 h-3" /> Most Popular</div>}
-              <h3 className="font-space font-bold text-lg">{plan.name}</h3>
-              <div className="flex items-baseline gap-1 mt-2 mb-1">
-                <span className="text-3xl font-bold">{plan.price}</span>
-                <span className="text-white/40 text-sm">{plan.period}</span>
-              </div>
-              <p className="text-white/40 text-xs mb-6">{plan.desc}</p>
-              <ul className="space-y-2.5 mb-6 flex-1">
-                {plan.features.map((f) => (
-                  <li key={f.text} className="flex items-center gap-2 text-sm">
-                    {f.included ? <Check className="w-3.5 h-3.5 text-cyan-400 shrink-0" /> : <X className="w-3.5 h-3.5 text-white/20 shrink-0" />}
-                    <span className={f.included ? 'text-white/70' : 'text-white/30'}>{f.text}</span>
-                  </li>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {testimonials.map((t, i) => (
+            <motion.div key={t.name} custom={i} variants={fadeUp} initial="hidden" whileInView="visible" viewport={{ once: true }}
+              className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6">
+              <Quote className="w-6 h-6 text-cyan-400/40 mb-3" />
+              <p className="text-sm text-white/60 leading-relaxed mb-4">{t.text}</p>
+              <div className="flex items-center gap-1 mb-3">
+                {Array.from({ length: t.rating }).map((_, s) => (
+                  <Star key={s} className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
                 ))}
-              </ul>
-              <Button asChild className={`w-full ${plan.highlight
-                ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white hover:opacity-90'
-                : 'bg-white/[0.06] text-white hover:bg-white/[0.1] border border-white/[0.08]'}`}>
-                <Link href={plan.href}>{plan.cta}</Link>
-              </Button>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-xs text-white font-bold">
+                  {t.name[0]}
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-white">{t.name}</p>
+                  <p className="text-xs text-white/40">{t.role}</p>
+                </div>
+              </div>
             </motion.div>
+          ))}
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section className="px-6 pb-20 max-w-3xl mx-auto">
+        <motion.div custom={0} variants={fadeUp} initial="hidden" whileInView="visible" viewport={{ once: true }} className="text-center mb-10">
+          <p className="text-xs uppercase tracking-widest text-white/50 mb-3">FAQ</p>
+          <h2 className="font-space text-3xl md:text-4xl font-bold">Frequently Asked Questions</h2>
+        </motion.div>
+        <div className="space-y-3">
+          {faqs.map((faq, i) => (
+            <FaqItem key={faq.q} faq={faq} index={i} />
           ))}
         </div>
       </section>

@@ -83,25 +83,15 @@ export async function decryptFile(
   ivBase64: string,
   saltBase64: string
 ): Promise<ArrayBuffer> {
-  console.debug('[XCrypt Decrypt] Input - encData:', encryptedData.byteLength, 'bytes, pw:', password.substring(0, 8) + '...');
   const salt = new Uint8Array(base64ToArrayBuffer(saltBase64));
   const iv = new Uint8Array(base64ToArrayBuffer(ivBase64));
-  console.debug('[XCrypt Decrypt] IV length:', iv.length, 'Salt length:', salt.length);
   const key = await deriveKey(password, salt);
-  console.debug('[XCrypt Decrypt] Key derived successfully');
 
-  try {
-    const result = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv },
-      key,
-      encryptedData
-    );
-    console.debug('[XCrypt Decrypt] Decryption successful:', result.byteLength, 'bytes');
-    return result;
-  } catch (err) {
-    console.error('[XCrypt Decrypt] Decryption failed:', err);
-    throw err;
-  }
+  return crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    encryptedData
+  );
 }
 
 export async function hashPassword(password: string): Promise<string> {

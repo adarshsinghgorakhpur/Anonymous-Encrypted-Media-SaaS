@@ -2,6 +2,7 @@ import { supabase } from './supabase/client';
 import { encryptFile, hashPassword, ENCRYPTION_SIZE_LIMIT } from './crypto';
 import { generateAccessCode } from './access-code';
 import { compressImage, getFileDimensions, getVideoDuration } from './compression';
+import { getStorageLimit, getMaxUploadSize, canUploadVideo } from './plans';
 
 export interface UploadOptions {
   password?: string;
@@ -25,16 +26,6 @@ export interface UploadResult {
 
 const ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif'];
 const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/mov', 'video/quicktime', 'video/webm'];
-const FREE_MAX_FILE_SIZE = 10 * 1024 * 1024;
-const PRO_MAX_FILE_SIZE = 500 * 1024 * 1024;
-const FREE_STORAGE_LIMIT = 50 * 1024 * 1024;
-const PRO_STORAGE_LIMIT = 20 * 1024 * 1024 * 1024;
-
-export function getStorageLimit(plan: string): number {
-  if (plan === 'ultra') return Infinity;
-  if (plan === 'pro') return PRO_STORAGE_LIMIT;
-  return FREE_STORAGE_LIMIT;
-}
 
 export function formatStorage(bytes: number): string {
   if (bytes >= 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024 / 1024).toFixed(1)}GB`;
@@ -47,11 +38,13 @@ export function validateFile(file: File, plan: string): string | null {
 
   if (!isImage && !isVideo) return `Unsupported file type: ${file.type}`;
 
-  const isPremium = plan !== 'free';
-  if (isVideo && !isPremium) return 'Video uploads require a Pro or Ultra plan';
+  if (isVideo && !canUploadVideo(plan)) return 'Video uploads require a Pro or Ultra plan';
 
-  const maxSize = isPremium ? PRO_MAX_FILE_SIZE : FREE_MAX_FILE_SIZE;
-  if (file.size > maxSize) return `File too large. Max: ${isPremium ? '500MB' : '10MB'}`;
+  const maxSize = getMaxUploadSize(plan);
+  if (file.size > maxSize) {
+    const maxDisplay = plan === 'free' ? '10MB' : '500MB';
+    return `File too large. Max: ${maxDisplay}`;
+  }
 
   return null;
 }
@@ -80,17 +73,12 @@ export async function uploadMedia(
   options: UploadOptions = {}
 ): Promise<UploadResult> {
   const { password, passwordHint, expiresIn, burnAfterViews, isOneTime, unlockAt, title, userId, onProgress, onStage } = options;
-  const {
-    data: { user: authUser },
-  } = await supabase.auth.getUser();
-  const resolvedUserId = userId ?? authUser?.id ?? null;
-  console.debug('[XCrypt Upload] Authenticated user id:', resolvedUserId);
 
   onStage?.('Checking storage...');
   onProgress?.(2);
 
-  if (resolvedUserId) {
-    const limit = await checkStorageLimit(resolvedUserId, file.size);
+  if (userId) {
+    const limit = await checkStorageLimit(userId, file.size);
     if (!limit.allowed) {
       throw new Error(limit.message || 'Storage limit exceeded');
     }
@@ -139,15 +127,6 @@ export async function uploadMedia(
     .from('xcrypt-media')
     .upload(storagePath, uploadBlob, { cacheControl: '3600', upsert: false });
 
-  console.debug('[XCrypt Upload] Storage upload response:', {
-    storagePath,
-    mimeType: processedFile.type,
-    encryptedSize: uploadBlob.size,
-    encrypted: shouldEncrypt,
-    ivLength: encryptionIv ? atob(encryptionIv).length : 0,
-    saltLength: encryptionSalt ? atob(encryptionSalt).length : 0,
-  });
-
   if (storageError) {
     throw new Error(`Storage upload failed: ${storageError.message}`);
   }
@@ -159,17 +138,17 @@ export async function uploadMedia(
 
   const expiresAt = expiresIn != null
     ? new Date(Date.now() + expiresIn * 60 * 60 * 1000).toISOString()
-    : resolvedUserId == null
+    : userId == null
     ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
     : null;
 
   const record = {
     access_code: accessCode,
-    user_id: resolvedUserId,
-    is_anonymous: !resolvedUserId,
+    user_id: userId || null,
+    is_anonymous: !userId,
     original_filename: file.name,
     file_type: fileType,
-    mime_type: processedFile.type,
+    mime_type: file.type,
     file_size_bytes: processedFile.size,
     storage_path: storagePath,
     is_encrypted: shouldEncrypt,
@@ -188,33 +167,19 @@ export async function uploadMedia(
     duration_seconds: duration || null,
   };
 
-  console.debug('[XCrypt Upload] Insert payload:', {
-    access_code: record.access_code,
-    user_id: record.user_id,
-    storage_path: record.storage_path,
-    mime_type: record.mime_type,
-    is_encrypted: record.is_encrypted,
-  });
-
-  const { data: insertedRows, error: dbError } = await (supabase.from('media_uploads') as any)
-    .insert(record)
-    .select('id')
-    .limit(1);
-
-  console.debug('[XCrypt Upload] Insert response:', insertedRows);
-  if (dbError) console.error('[XCrypt Upload] Insert error:', dbError);
+  const { error: dbError } = await (supabase.from('media_uploads') as any).insert(record);
 
   if (dbError) {
     await supabase.storage.from('xcrypt-media').remove([storagePath]);
     throw new Error(`Database save failed: ${dbError.message}`);
   }
 
-  if (resolvedUserId) {
-    const { data: profile } = await supabase.from('profiles').select('storage_used_bytes').eq('id', resolvedUserId).maybeSingle();
+  if (userId) {
+    const { data: profile } = await supabase.from('profiles').select('storage_used_bytes').eq('id', userId).maybeSingle();
     const currentUsage = profile?.storage_used_bytes || 0;
     await (supabase.from('profiles') as any)
       .update({ storage_used_bytes: currentUsage + processedFile.size })
-      .eq('id', resolvedUserId);
+      .eq('id', userId);
   }
 
   onProgress?.(100);
@@ -236,17 +201,45 @@ export async function getSignedUrl(storagePath: string): Promise<string> {
     .createSignedUrl(storagePath, 3600);
 
   if (error || !data) {
-    throw new Error('Failed to get signed URL');
+    throw new Error(`Failed to get signed URL: ${error?.message || 'No data'}`);
   }
 
   return data.signedUrl;
 }
 
 export async function destroyUpload(uploadId: string, storagePath: string) {
+  // Delete from storage
   await supabase.storage.from('xcrypt-media').remove([storagePath]);
+
+  // Get the upload to find the user
+  const { data: upload } = await (supabase.from('media_uploads') as any)
+    .select('user_id, file_size_bytes')
+    .eq('id', uploadId)
+    .single();
+
+  // Mark as destroyed
   await (supabase.from('media_uploads') as any)
     .update({ is_destroyed: true, destroyed_at: new Date().toISOString() })
     .eq('id', uploadId);
+
+  // Recalculate user's storage if owned
+  if (upload?.user_id) {
+    await recalculateUserStorage(upload.user_id);
+  }
+}
+
+export async function recalculateUserStorage(userId: string): Promise<void> {
+  const { data } = await (supabase.from('media_uploads') as any)
+    .select('file_size_bytes')
+    .eq('user_id', userId)
+    .eq('is_destroyed', false)
+    .is('deleted_at', null);
+
+  const totalStorage = (data || []).reduce((sum: number, u: any) => sum + (u.file_size_bytes || 0), 0);
+
+  await (supabase.from('profiles') as any)
+    .update({ storage_used_bytes: totalStorage })
+    .eq('id', userId);
 }
 
 export function parseUserAgent(ua: string) {

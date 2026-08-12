@@ -2,9 +2,11 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Shield, Eye, EyeOff, Mail, Lock, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, Loader2, Wand2 } from 'lucide-react';
+import Image from 'next/image';
 import { supabase } from '@/lib/supabase/client';
 import { useAuthStore } from '@/lib/store';
+import { loadProfileAndSubscription } from '@/lib/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
@@ -19,21 +21,23 @@ function LoginForm() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [magicLinkLoading, setMagicLinkLoading] = useState(false);
   const [error, setError] = useState('');
+  const [info, setInfo] = useState('');
+  const [refCode, setRefCode] = useState<string | null>(null);
 
   useEffect(() => {
     const err = searchParams.get('error');
     if (err === 'auth_failed') setError('Authentication failed. Please try again.');
+    const ref = searchParams.get('ref');
+    if (ref) setRefCode(ref);
   }, [searchParams]);
 
-  async function loadProfile(userId: string) {
-    const [profileRes, subRes] = await Promise.all([
-      supabase.from('profiles').select('*').eq('id', userId).maybeSingle(),
-      supabase.from('subscriptions').select('*').eq('user_id', userId).eq('status', 'active').maybeSingle(),
-    ]);
-    setProfile(profileRes.data as any);
-    setSubscription(subRes.data as any);
-    setIsPremium(subRes.data?.plan !== 'free' && subRes.data?.plan != null);
+  async function applyProfile(userId: string) {
+    const data = await loadProfileAndSubscription(userId);
+    setProfile(data.profile);
+    setSubscription(data.subscription);
+    setIsPremium(data.isPremium);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -47,7 +51,7 @@ function LoginForm() {
         if (authError) throw authError;
         setUser(data.user);
         setSession(data.session);
-        if (data.user) await loadProfile(data.user.id);
+        if (data.user) await applyProfile(data.user.id);
         toast({ title: 'Welcome back!' });
         router.push('/dashboard');
       } else {
@@ -57,7 +61,19 @@ function LoginForm() {
         setSession(data.session);
         if (data.user) {
           await new Promise(r => setTimeout(r, 1500));
-          await loadProfile(data.user.id);
+          await applyProfile(data.user.id);
+
+          if (refCode) {
+            const { data: refData } = await (supabase.from('referral_codes') as any)
+              .select('id').eq('code', refCode).maybeSingle();
+            if (refData) {
+              await (supabase.from('referrals') as any).insert({
+                referrer_code_id: refData.id,
+                referred_user_id: data.user.id,
+                is_successful: true,
+              });
+            }
+          }
         }
         toast({ title: 'Account created!' });
         router.push('/dashboard');
@@ -82,13 +98,44 @@ function LoginForm() {
     }
   }
 
+  async function handleMagicLink(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email) {
+      setError('Enter your email first');
+      return;
+    }
+    setError('');
+    setMagicLinkLoading(true);
+    try {
+      const { error: magicError } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+      if (magicError) throw magicError;
+      setInfo('Check your inbox for a magic sign-in link.');
+      toast({ title: 'Magic link sent!', description: 'Check your email to sign in.' });
+    } catch (err: any) {
+      setError(err.message || 'Failed to send magic link');
+    } finally {
+      setMagicLinkLoading(false);
+    }
+  }
+
   return (
-    <div className="min-h-screen bg-[#080B14] flex items-center justify-center px-4">
+    <div className="min-h-screen bg-[#080B14] flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-md">
         <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-8 backdrop-blur-sm">
           <div className="flex flex-col items-center mb-8">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center mb-4">
-              <Shield className="w-6 h-6 text-white" />
+            <div className="mb-4">
+              <Image
+                src="https://raw.githubusercontent.com/adarshsinghgorakhpur/Shared-database/refs/heads/main/XCrypt%20encryption/xcrypt.png"
+                alt="XCrypt"
+                width={140}
+                height={40}
+                className="h-10 w-auto"
+              />
             </div>
             <h1 className="text-2xl font-bold text-white">
               {mode === 'login' ? 'Welcome back' : 'Create account'}
@@ -101,6 +148,11 @@ function LoginForm() {
           {error && (
             <div className="mb-4 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400">
               {error}
+            </div>
+          )}
+          {info && (
+            <div className="mb-4 px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-sm text-emerald-400">
+              {info}
             </div>
           )}
 
@@ -146,6 +198,15 @@ function LoginForm() {
             </Button>
           </form>
 
+          <button
+            onClick={handleMagicLink}
+            disabled={magicLinkLoading || !email}
+            className="w-full mt-3 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-white/[0.08] text-sm text-white/60 hover:text-white hover:bg-white/[0.04] transition disabled:opacity-50"
+          >
+            {magicLinkLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4 text-cyan-400" />}
+            Send Magic Link
+          </button>
+
           <div className="relative my-6">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-white/[0.08]" />
@@ -173,7 +234,7 @@ function LoginForm() {
           <p className="mt-6 text-center text-sm text-white/40">
             {mode === 'login' ? "Don't have an account?" : 'Already have an account?'}{' '}
             <button
-              onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); }}
+              onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); setInfo(''); }}
               className="text-cyan-400 hover:text-cyan-300"
             >
               {mode === 'login' ? 'Sign up' : 'Sign in'}

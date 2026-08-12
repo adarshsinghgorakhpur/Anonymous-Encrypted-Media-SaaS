@@ -1,47 +1,154 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { motion } from 'framer-motion';
-import { Search, Copy, ExternalLink, Trash2, Upload, Eye, Clock } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Search, Copy, ExternalLink, Trash2, Upload, Eye, Clock, RotateCcw, X, Trash } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
 import { useAuthStore } from '@/lib/store';
-import { formatFileSize } from '@/lib/compression';
+import { formatStorage } from '@/lib/shared';
 import { formatAccessCode } from '@/lib/access-code';
+import { recalculateUserStorage } from '@/lib/upload';
 import type { MediaUpload } from '@/lib/supabase/types';
 
 export default function UploadsPage() {
   const { user } = useAuthStore();
-  const [uploads, setUploads] = useState<MediaUpload[]>([]);
+  const [activeUploads, setActiveUploads] = useState<MediaUpload[]>([]);
+  const [trashedUploads, setTrashedUploads] = useState<MediaUpload[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const [showTrash, setShowTrash] = useState(false);
 
-  const load = () => {
-    if (!user) return;
-    (supabase.from('media_uploads') as any).select('*').eq('user_id', user.id).eq('is_destroyed', false).order('created_at', { ascending: false })
-      .then(({ data }: any) => { setUploads(data || []); setLoading(false); });
-  };
-  useEffect(load, [user]);
+  const load = useCallback(() => {
+    if (!user) {
+      setActiveUploads([]);
+      setTrashedUploads([]);
+      setLoading(false);
+      return;
+    }
 
-  const filtered = uploads.filter((u) => u.original_filename.toLowerCase().includes(search.toLowerCase()));
+    // Load active uploads (not deleted)
+    (supabase.from('media_uploads') as any)
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('is_destroyed', false)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false })
+      .then(({ data, error }: any) => {
+        if (error) throw error;
+        setActiveUploads(data || []);
+      });
+
+    // Load trashed uploads
+    (supabase.from('media_uploads') as any)
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('is_destroyed', false)
+      .not('deleted_at', 'is', null)
+      .order('deleted_at', { ascending: false })
+      .then(({ data, error }: any) => {
+        if (error) throw error;
+        setTrashedUploads(data || []);
+        setLoading(false);
+      });
+  }, [user]);
+
+  useEffect(load, [load]);
+
+  const filtered = activeUploads.filter((u) => u.original_filename.toLowerCase().includes(search.toLowerCase()));
 
   async function copyLink(code: string) {
     await navigator.clipboard.writeText(`${window.location.origin}/view/${code}`);
   }
 
-  async function deleteUpload(u: MediaUpload) {
-    if (!confirm('Delete this upload?')) return;
-    await (supabase.from('media_uploads') as any).update({ is_destroyed: true, destroyed_at: new Date().toISOString() }).eq('id', u.id);
+  async function softDeleteUpload(u: MediaUpload) {
+    if (!confirm('Move this upload to trash? It will be permanently deleted after 30 days.')) return;
+    const { error } = await (supabase.from('media_uploads') as any)
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', u.id);
+    if (error) throw error;
+    load();
+  }
+
+  async function restoreUpload(id: string) {
+    const { error } = await (supabase.from('media_uploads') as any)
+      .update({ deleted_at: null })
+      .eq('id', id);
+    if (error) throw error;
+    if (user) await recalculateUserStorage(user.id);
+    load();
+  }
+
+  async function permanentDeleteUpload(u: MediaUpload) {
+    if (!confirm('Permanently delete this upload? This cannot be undone.')) return;
+    // Delete from storage first
     if (u.storage_path) {
       const parts = u.storage_path.split('/');
       await supabase.storage.from(parts[0]).remove([parts.slice(1).join('/')]);
     }
+    // Then mark as destroyed
+    const { error } = await (supabase.from('media_uploads') as any)
+      .update({ is_destroyed: true, destroyed_at: new Date().toISOString() })
+      .eq('id', u.id);
+    if (error) throw error;
+    if (user) await recalculateUserStorage(user.id);
     load();
   }
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-white font-space">Uploads</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-white font-space">Uploads</h1>
+        {trashedUploads.length > 0 && (
+          <button onClick={() => setShowTrash(!showTrash)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition ${showTrash ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-white/[0.04] text-white/50 hover:text-white border border-white/[0.08]'}`}>
+            <Trash className="w-3.5 h-3.5" />Trash ({trashedUploads.length})
+          </button>
+        )}
+      </div>
+
+      {/* Trash Section */}
+      <AnimatePresence>
+        {showTrash && trashedUploads.length > 0 && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+            <div className="bg-red-500/5 border border-red-500/20 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-medium text-red-400 flex items-center gap-2">
+                  <Trash className="w-4 h-4" />Recycle Bin
+                </h3>
+                <span className="text-xs text-white/30">Uploads are deleted after 30 days</span>
+              </div>
+              <div className="space-y-2">
+                {trashedUploads.map((u) => {
+                  const daysLeft = Math.max(0, 30 - Math.floor((Date.now() - new Date(u.deleted_at!).getTime()) / (1000 * 60 * 60 * 24)));
+                  return (
+                    <div key={u.id} className="flex items-center justify-between bg-white/[0.03] rounded-xl p-3">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <Upload className="w-4 h-4 text-white/30 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-sm text-white/60 truncate">{u.original_filename}</p>
+                          <div className="flex items-center gap-2 text-xs text-white/30">
+                            <span>{formatStorage(u.file_size_bytes)}</span>
+                            <span className="text-red-400/60">{daysLeft} days left</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => restoreUpload(u.id)} className="p-1.5 rounded-lg hover:bg-emerald-500/10 text-white/40 hover:text-emerald-400 transition" title="Restore">
+                          <RotateCcw className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => permanentDeleteUpload(u)} className="p-1.5 rounded-lg hover:bg-red-500/20 text-white/40 hover:text-red-400 transition" title="Delete permanently">
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
@@ -63,7 +170,7 @@ export default function UploadsPage() {
               <div className="min-w-0 flex-1">
                 <p className="text-sm text-white truncate">{u.original_filename}</p>
                 <div className="flex items-center gap-3 text-xs text-white/40 mt-1">
-                  <span>{formatFileSize(u.file_size_bytes)}</span>
+                  <span>{formatStorage(u.file_size_bytes)}</span>
                   <span>{u.file_type}</span>
                   <span className="flex items-center gap-1"><Eye className="w-3 h-3" />{u.view_count}</span>
                   {u.expires_at && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{new Date(u.expires_at).toLocaleDateString()}</span>}
@@ -73,7 +180,7 @@ export default function UploadsPage() {
               <div className="flex items-center gap-1">
                 <button onClick={() => copyLink(u.access_code)} className="p-2 rounded-lg hover:bg-white/[0.06] text-white/40 hover:text-white transition" title="Copy link"><Copy className="w-4 h-4" /></button>
                 <a href={`/view/${u.access_code}`} target="_blank" rel="noreferrer" className="p-2 rounded-lg hover:bg-white/[0.06] text-white/40 hover:text-white transition" title="View"><ExternalLink className="w-4 h-4" /></a>
-                <button onClick={() => deleteUpload(u)} className="p-2 rounded-lg hover:bg-red-500/10 text-white/40 hover:text-red-400 transition" title="Delete"><Trash2 className="w-4 h-4" /></button>
+                <button onClick={() => softDeleteUpload(u)} className="p-2 rounded-lg hover:bg-red-500/10 text-white/40 hover:text-red-400 transition" title="Move to trash"><Trash2 className="w-4 h-4" /></button>
               </div>
             </motion.div>
           ))}

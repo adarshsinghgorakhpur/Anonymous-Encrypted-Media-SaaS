@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
 import { useAuthStore } from '@/lib/store';
+import { formatStorage } from '@/lib/shared';
 import { Navbar } from '@/components/layout/navbar';
 import { Button } from '@/components/ui/button';
 
@@ -187,7 +188,7 @@ export default function AdminPage() {
                           <tr key={u.id} className="border-b border-white/[0.04] last:border-0">
                             <td className="px-4 py-3 text-sm text-white/70 max-w-[200px] truncate">{u.original_filename}</td>
                             <td className="px-4 py-3 text-sm text-white/40">{u.file_type}</td>
-                            <td className="px-4 py-3 text-sm text-white/40">{formatSize(u.file_size_bytes)}</td>
+                            <td className="px-4 py-3 text-sm text-white/40">{formatStorage(u.file_size_bytes)}</td>
                             <td className="px-4 py-3 text-sm text-white/40 flex items-center gap-1"><Eye className="w-3 h-3" />{u.view_count}</td>
                             <td className="px-4 py-3">
                               <span className={`text-xs px-2 py-0.5 rounded-full ${u.is_destroyed ? 'bg-red-500/10 text-red-400' : 'bg-emerald-500/10 text-emerald-400'}`}>

@@ -7,13 +7,14 @@ import {
   Upload, Lock, Clock, Flame, Copy, Check, QrCode, Timer,
   ShieldCheck, FileUp, Loader2, AlertCircle, Eye, Key, ToggleLeft, ToggleRight,
 } from 'lucide-react';
-import { QRCodeSVG } from 'qrcode.react';
 import { useAuthStore, useUploadStore } from '@/lib/store';
 import { uploadMedia, validateFile, type UploadResult } from '@/lib/upload';
 import { formatAccessCode } from '@/lib/access-code';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
+import { SharePanel } from '@/components/share/share-panel';
+import { AdSlot } from '@/components/ads/ad-slot';
 
 const EXPIRY_OPTIONS = [
   { label: '1 Hour', value: 1 },
@@ -36,7 +37,6 @@ export default function UploadPage() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStage, setUploadStage] = useState('');
 
-  // Configuration options
   const [usePassword, setUsePassword] = useState(false);
   const [password, setPassword] = useState('');
   const [hint, setHint] = useState('');
@@ -45,9 +45,7 @@ export default function UploadPage() {
   const [oneTimeAccess, setOneTimeAccess] = useState(false);
   const [scheduledUnlock, setScheduledUnlock] = useState('');
   const [completedResult, setCompletedResult] = useState<UploadResult | null>(null);
-  const [copiedLink, setCopiedLink] = useState(false);
   const [copiedKey, setCopiedKey] = useState(false);
-  const [showQR, setShowQR] = useState(false);
 
   const selectFile = useCallback((files: FileList | File[]) => {
     const file = Array.from(files)[0];
@@ -112,12 +110,6 @@ export default function UploadPage() {
     [selectFile]
   );
 
-  const copyToClipboard = async (text: string, setter: (v: boolean) => void) => {
-    await navigator.clipboard.writeText(text);
-    setter(true);
-    setTimeout(() => setter(false), 2000);
-  };
-
   const resetUpload = () => {
     setStep('select');
     setSelectedFile(null);
@@ -131,7 +123,6 @@ export default function UploadPage() {
     setBurnAfterView(false);
     setOneTimeAccess(false);
     setScheduledUnlock('');
-    setShowQR(false);
   };
 
   return (
@@ -193,7 +184,6 @@ export default function UploadPage() {
         <AnimatePresence mode="wait">
           {step === 'configure' && (
             <motion.div key="configure" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-6">
-              {/* Selected file */}
               <div className="rounded-2xl bg-white/[0.04] border border-white/[0.08] p-4 flex items-center gap-3">
                 <FileUp className="w-5 h-5 text-cyan-400" />
                 <div className="flex-1 min-w-0">
@@ -203,14 +193,11 @@ export default function UploadPage() {
                 <button onClick={resetUpload} className="text-xs text-white/40 hover:text-white">Change</button>
               </div>
 
-              {/* Privacy Options */}
               <div className="rounded-2xl bg-white/[0.04] border border-white/[0.08] p-5 space-y-5">
                 <h2 className="text-sm font-semibold flex items-center gap-2"><Lock className="w-4 h-4 text-cyan-400" /> Privacy Options</h2>
 
-                {/* Password toggle */}
                 <div className="space-y-3">
-                  <button onClick={() => setUsePassword(!usePassword)}
-                    className="flex items-center gap-3 text-sm">
+                  <button onClick={() => setUsePassword(!usePassword)} className="flex items-center gap-3 text-sm">
                     {usePassword ? <ToggleRight className="w-6 h-6 text-cyan-400" /> : <ToggleLeft className="w-6 h-6 text-white/30" />}
                     <span className={usePassword ? 'text-white' : 'text-white/50'}>Password Protection</span>
                   </button>
@@ -230,7 +217,6 @@ export default function UploadPage() {
                   </AnimatePresence>
                 </div>
 
-                {/* Expiry */}
                 <div className="space-y-1.5">
                   <label className="text-xs text-white/50 flex items-center gap-1"><Clock className="w-3 h-3" /> Expiry</label>
                   <div className="flex gap-2 flex-wrap">
@@ -243,26 +229,20 @@ export default function UploadPage() {
                   </div>
                 </div>
 
-                {/* Burn after view */}
-                <button onClick={() => setBurnAfterView(!burnAfterView)}
-                  className="flex items-center gap-3 text-sm">
+                <button onClick={() => setBurnAfterView(!burnAfterView)} className="flex items-center gap-3 text-sm">
                   {burnAfterView ? <ToggleRight className="w-6 h-6 text-orange-400" /> : <ToggleLeft className="w-6 h-6 text-white/30" />}
                   <span className={burnAfterView ? 'text-white' : 'text-white/50'}>Burn After View</span>
                   <span className="text-xs text-white/30 ml-1">Auto-destroy after 1 view</span>
                 </button>
 
-                {/* One-time access */}
-                <button onClick={() => setOneTimeAccess(!oneTimeAccess)}
-                  className="flex items-center gap-3 text-sm">
+                <button onClick={() => setOneTimeAccess(!oneTimeAccess)} className="flex items-center gap-3 text-sm">
                   {oneTimeAccess ? <ToggleRight className="w-6 h-6 text-amber-400" /> : <ToggleLeft className="w-6 h-6 text-white/30" />}
                   <span className={oneTimeAccess ? 'text-white' : 'text-white/50'}>One-Time Access</span>
                   <span className="text-xs text-white/30 ml-1">Link invalid after first open</span>
                 </button>
 
-                {/* Scheduled unlock (premium) */}
                 <div className="space-y-2">
-                  <button onClick={() => setScheduledUnlock(scheduledUnlock ? '' : 'scheduled')}
-                    className="flex items-center gap-3 text-sm">
+                  <button onClick={() => setScheduledUnlock(scheduledUnlock ? '' : 'scheduled')} className="flex items-center gap-3 text-sm">
                     {scheduledUnlock ? <ToggleRight className="w-6 h-6 text-violet-400" /> : <ToggleLeft className="w-6 h-6 text-white/30" />}
                     <span className={scheduledUnlock ? 'text-white' : 'text-white/50'}>Scheduled Unlock</span>
                     {!isPremium && <span className="text-xs text-amber-400/70 ml-1">Pro</span>}
@@ -272,13 +252,7 @@ export default function UploadPage() {
                       <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
                         <div className="space-y-1.5">
                           <label className="text-xs text-white/50 flex items-center gap-1"><Timer className="w-3 h-3" /> Unlock At</label>
-                          <Input
-                            type="datetime-local"
-                            value={scheduledUnlock === 'scheduled' ? '' : scheduledUnlock}
-                            onChange={(e) => setScheduledUnlock(e.target.value)}
-                            disabled={!isPremium}
-                            className="bg-white/[0.04] border-white/[0.08] text-sm"
-                          />
+                          <Input type="datetime-local" value={scheduledUnlock === 'scheduled' ? '' : scheduledUnlock} onChange={(e) => setScheduledUnlock(e.target.value)} disabled={!isPremium} className="bg-white/[0.04] border-white/[0.08] text-sm" />
                           {!isPremium && <p className="text-xs text-amber-400/70">Upgrade to Pro for scheduled unlock</p>}
                         </div>
                       </motion.div>
@@ -293,7 +267,6 @@ export default function UploadPage() {
                 )}
               </div>
 
-              {/* Submit button */}
               <Button onClick={handleUpload} className="w-full h-12 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-semibold text-base hover:opacity-90">
                 <Lock className="w-4 h-4 mr-2" />Encrypt & Upload
               </Button>
@@ -324,21 +297,14 @@ export default function UploadPage() {
               <h2 className="text-sm font-semibold text-emerald-400 flex items-center gap-2"><Check className="w-4 h-4" /> Upload Complete</h2>
               <div className="space-y-2">
                 <label className="text-xs text-white/50">Share URL</label>
-                <div className="flex gap-2">
-                  <Input readOnly value={completedResult.shareUrl} className="bg-white/[0.04] border-white/[0.08] text-sm flex-1" />
-                  <Button size="sm" variant="outline" className="border-white/[0.08] shrink-0"
-                    onClick={() => copyToClipboard(completedResult.shareUrl, setCopiedLink)}>
-                    {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                  </Button>
-                </div>
+                <Input readOnly value={completedResult.shareUrl} className="bg-white/[0.04] border-white/[0.08] text-sm" />
               </div>
               {completedResult.encryptionPassword && (
                 <div className="space-y-2">
                   <label className="text-xs text-white/50 flex items-center gap-1"><Key className="w-3 h-3" /> Encryption Key</label>
                   <div className="flex gap-2">
                     <Input readOnly value={completedResult.encryptionPassword} className="bg-white/[0.04] border-white/[0.08] text-sm flex-1 font-mono" />
-                    <Button size="sm" variant="outline" className="border-white/[0.08] shrink-0"
-                      onClick={() => copyToClipboard(completedResult.encryptionPassword!, setCopiedKey)}>
+                    <Button size="sm" variant="outline" className="border-white/[0.08] shrink-0" onClick={() => { navigator.clipboard.writeText(completedResult.encryptionPassword!); setCopiedKey(true); setTimeout(() => setCopiedKey(false), 2000); }}>
                       {copiedKey ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                     </Button>
                   </div>
@@ -349,19 +315,17 @@ export default function UploadPage() {
                 <label className="text-xs text-white/50">Access Code</label>
                 <p className="text-lg font-mono tracking-widest text-cyan-400">{formatAccessCode(completedResult.accessCode)}</p>
               </div>
-              <button onClick={() => setShowQR(!showQR)} className="flex items-center gap-1.5 text-xs text-white/50 hover:text-white transition-colors">
-                <QrCode className="w-3.5 h-3.5" /> {showQR ? 'Hide' : 'Show'} QR Code
-              </button>
-              <AnimatePresence>
-                {showQR && (
-                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="flex justify-center p-4 bg-white rounded-xl">
-                    <QRCodeSVG value={completedResult.shareUrl} size={180} />
-                  </motion.div>
-                )}
-              </AnimatePresence>
+
+              <div className="pt-3 border-t border-white/[0.06]">
+                <label className="text-xs text-white/50 mb-2 block">Share via</label>
+                <SharePanel url={completedResult.shareUrl} />
+              </div>
+
               <Button onClick={resetUpload} variant="outline" className="w-full border-white/[0.08] text-white/60 hover:text-white">
                 Upload Another File
               </Button>
+
+              <AdSlot className="pt-3" label="Sponsored" />
             </motion.div>
           )}
         </AnimatePresence>

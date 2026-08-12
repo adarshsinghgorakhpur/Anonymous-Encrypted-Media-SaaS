@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { Navbar } from '@/components/layout/navbar';
+import { AdSlot } from '@/components/ads/ad-slot';
 import type { MediaUpload } from '@/lib/supabase/types';
 
 type State = 'loading' | 'password-required' | 'decrypting' | 'ready' | 'error' | 'expired' | 'not-found' | 'locked';
@@ -80,8 +81,56 @@ export default function ViewPage() {
     } catch {}
   }, []);
 
+  const trackAnalytics = useCallback(async (rec: MediaUpload) => {
+    await (supabase.from('analytics') as any).insert({ upload_id: rec.id, event_type: 'view' });
+
+    const newCount = rec.view_count + 1;
+    await (supabase.from('media_uploads') as any)
+      .update({ view_count: newCount })
+      .eq('id', rec.id);
+
+    if (rec.is_one_time) {
+      setTimeout(async () => { await destroyUpload(rec.id, rec.storage_path); }, 5000);
+    } else if (rec.burn_after_views && newCount >= rec.burn_after_views) {
+      setTimeout(async () => { await destroyUpload(rec.id, rec.storage_path); }, 5000);
+    }
+  }, []);
+
+  const prepareMedia = useCallback(async (rec: MediaUpload, pw?: string) => {
+    try {
+      setState(rec.is_encrypted ? 'decrypting' : 'loading');
+
+      const signedUrl = await getSignedUrl(rec.storage_path);
+
+      if (!rec.is_encrypted) {
+        setMediaUrl(signedUrl);
+      } else {
+        const res = await fetch(signedUrl);
+        if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`);
+
+        const encBuf = await res.arrayBuffer();
+        if (encBuf.byteLength === 0) throw new Error('Encrypted payload is empty');
+
+        const decryptPassword = pw || rec.encryption_password || '';
+        if (!rec.encryption_iv || !rec.encryption_salt) throw new Error('Missing encryption metadata');
+
+        const decBuf = await decryptFile(encBuf, decryptPassword, rec.encryption_iv!, rec.encryption_salt!);
+        const blob = new Blob([decBuf], { type: rec.mime_type });
+        setMediaUrl(URL.createObjectURL(blob));
+      }
+
+      setState('ready');
+      trackAnalytics(rec);
+      logAccess(rec, true, !!pw);
+    } catch {
+      setState('error');
+      logAccess(rec, false, !!pw);
+    }
+  }, [logAccess, trackAnalytics]);
+
   const loadUpload = useCallback(async () => {
     setState('loading');
+
     const { data, error } = await (supabase.from('media_uploads') as any)
       .select('*')
       .eq('access_code', code)
@@ -90,8 +139,9 @@ export default function ViewPage() {
     if (error || !data) return setState('not-found');
 
     const record = data as MediaUpload;
-    console.debug('[XCrypt View] Loaded upload row id:', record.id, 'storagePath:', record.storage_path, 'encrypted:', record.is_encrypted);
+
     if (record.is_destroyed) return setState('expired');
+
     if (record.expires_at && new Date(record.expires_at) < new Date()) {
       await (supabase.from('media_uploads') as any).update({ is_destroyed: true, destroyed_at: new Date().toISOString() }).eq('id', record.id);
       return setState('expired');
@@ -99,73 +149,11 @@ export default function ViewPage() {
 
     setUpload(record);
 
-    if (record.unlock_at && new Date(record.unlock_at) > new Date()) {
-      return setState('locked');
-    }
-
+    if (record.unlock_at && new Date(record.unlock_at) > new Date()) return setState('locked');
     if (record.password_hash) return setState('password-required');
 
     await prepareMedia(record);
-  }, [code]);
-
-  const prepareMedia = useCallback(async (rec: MediaUpload, pw?: string) => {
-    try {
-      setState(rec.is_encrypted ? 'decrypting' : 'loading');
-      console.debug('[XCrypt View] Decrypt start for upload id:', rec.id, 'storagePath:', rec.storage_path);
-      const signedUrl = await getSignedUrl(rec.storage_path);
-
-      if (!rec.is_encrypted) {
-        setMediaUrl(signedUrl);
-      } else {
-        const decryptPassword = pw || rec.encryption_password || '';
-        const res = await fetch(signedUrl);
-        if (!res.ok) throw new Error(`Encrypted download failed: ${res.status}`);
-        const encBuf = await res.arrayBuffer();
-        console.debug('[XCrypt] Encrypted buffer size:', encBuf.byteLength);
-        console.debug('[XCrypt] Downloaded encrypted size:', encBuf.byteLength);
-        console.debug('[XCrypt] Password available:', !!decryptPassword, 'length:', decryptPassword.length);
-        console.debug('[XCrypt] IV available:', !!rec.encryption_iv, 'Salt available:', !!rec.encryption_salt);
-        console.debug('[XCrypt] IV length:', rec.encryption_iv ? atob(rec.encryption_iv).length : 0);
-        console.debug('[XCrypt] Salt length:', rec.encryption_salt ? atob(rec.encryption_salt).length : 0);
-        console.debug('[XCrypt] MIME type:', rec.mime_type);
-        if (!rec.encryption_iv || !rec.encryption_salt) {
-          throw new Error('Missing encryption metadata');
-        }
-        if (encBuf.byteLength === 0) {
-          throw new Error('Downloaded encrypted payload is empty');
-        }
-        const decBuf = await decryptFile(encBuf, decryptPassword, rec.encryption_iv!, rec.encryption_salt!);
-        console.debug('[XCrypt] Decrypted buffer size:', decBuf.byteLength);
-        const blob = new Blob([decBuf], { type: rec.mime_type });
-        console.debug('[XCrypt] Blob created:', blob.size, blob.type);
-        setMediaUrl(URL.createObjectURL(blob));
-      }
-
-      setState('ready');
-      trackAnalytics(rec);
-      logAccess(rec, true, !!pw);
-    } catch (error) {
-      console.error('[XCrypt] Decryption error:', error);
-      setState('error');
-      logAccess(rec, false, !!pw);
-    }
-  }, [logAccess]);
-
-  const trackAnalytics = async (rec: MediaUpload) => {
-    await (supabase.from('analytics') as any).insert({ upload_id: rec.id, event_type: 'view' });
-    const newCount = rec.view_count + 1;
-    await (supabase.from('media_uploads') as any).update({ view_count: newCount }).eq('id', rec.id);
-
-    if (rec.is_one_time) {
-      setTimeout(async () => {
-        await destroyUpload(rec.id, rec.storage_path);
-      }, 5000);
-    } else if (rec.burn_after_views && newCount >= rec.burn_after_views) {
-      setTimeout(async () => {
-        await destroyUpload(rec.id, rec.storage_path);
-      }, 5000);
-    }
-  };
+  }, [code, prepareMedia]);
 
   useEffect(() => { loadUpload(); }, [loadUpload]);
 
@@ -355,6 +343,8 @@ export default function ViewPage() {
                 <Trash2 className="w-3 h-3" />This file will be destroyed after {upload.burn_after_views} views
               </p>
             )}
+
+            <AdSlot className="mt-4" label="Sponsored" />
           </motion.div>
         </AnimatePresence>
       </div>

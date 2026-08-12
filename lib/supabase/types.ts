@@ -34,6 +34,7 @@ export interface MediaUpload {
   expires_at?: string;
   is_destroyed: boolean;
   destroyed_at?: string;
+  deleted_at?: string;
   unlock_at?: string;
   is_one_time: boolean;
   width?: number;
@@ -55,6 +56,7 @@ export interface VaultNote {
   password_hint?: string;
   expires_at?: string;
   is_destroyed: boolean;
+  deleted_at?: string;
   created_at: string;
   updated_at: string;
 }
@@ -69,6 +71,7 @@ export interface Gallery {
   is_invite_only: boolean;
   expires_at?: string;
   is_destroyed: boolean;
+  deleted_at?: string;
   created_at: string;
   updated_at: string;
 }
@@ -96,6 +99,9 @@ export interface Analytics {
   user_agent?: string;
   referrer?: string;
   country?: string;
+  browser?: string;
+  os?: string;
+  device_type?: string;
   created_at: string;
 }
 
